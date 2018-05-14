@@ -1,5 +1,8 @@
 # coding=utf-8
+import os
 import time
+
+import sh
 from requests import ConnectionError
 
 from git import Repo
@@ -69,21 +72,31 @@ def send_mail(sub, content, send_mail_list):
         traceback.print_exc()
         logger.error(traceback.format_exc())
 
+def sh_git(message):
+    print os.getcwd()
+    sh.git(['add', 'autogit.json'])
+    sh.git(['commit', '-m', message])
+    my_git = sh.Command('./git.sh')
+    my_git(['-i', '~/.ssh/gerritkey/id_rsa', 'push', 'ssh://dongpl@review.source.spreadtrum.com:29418/scm/etc/build', 'HEAD:refs/for/master'])
+    # sh.git(['push', 'ssh://dongpl@review.source.spreadtrum.com:29418/scm/etc/build', 'HEAD:refs/for/master'])
+
 def main(message):
     repo = Repo(GIT_REPOSITORY_path)
     if not repo.is_dirty():
         print NO_CHANGE
         return
-    commit_id = repo.heads[0].commit.hexsha
     git = repo.git
     try:
-        git.add(['autogit.json'])
-        git.commit(['-m', message])
-        ret = git.push(['ssh://dongpl@review.source.spreadtrum.com:29418/scm/etc/build', 'HEAD:refs/for/master'])
+        # git.add(['autogit.json'])
+        # git.commit(['-m', message])
+        # ret = git.push(['ssh://dongpl@review.source.spreadtrum.com:29418/scm/etc/build', 'HEAD:refs/for/master'])
+        sh_git('test')
     except GitCommandError:
+        traceback.print_exc()
         send_mail('Auto Git Main GitCommandError', traceback.format_exc(), TO_SOMEONE)
         print FAIL
         return
+    commit_id = repo.heads[0].commit.hexsha
     ret = gerrit_verify_review_submit(commit_id)
     print ret
 
