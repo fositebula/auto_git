@@ -2,7 +2,8 @@
 import time
 from requests import ConnectionError
 
-import git
+from git import Repo
+from git.exc import GitCommandError
 import requests
 import json
 import traceback
@@ -40,7 +41,7 @@ SUCCESS = 'Success'
 NO_CHANGE = 'No Change'
 
 #git repository path
-GIT_REPOSITORY_path = 'autogit'
+GIT_REPOSITORY_path = ''
 
 def logger_init():
     logger.setLevel(level = LOG_LEVEL)
@@ -69,17 +70,17 @@ def send_mail(sub, content, send_mail_list):
         logger.error(traceback.format_exc())
 
 def main(message):
-    repo = git.Repo(GIT_REPOSITORY_path)
+    repo = Repo(GIT_REPOSITORY_path)
     if not repo.is_dirty():
         print NO_CHANGE
         return
     commit_id = repo.heads[0].commit.hexsha
     git = repo.git
     try:
-        git.add(['compile.json'])
+        git.add(['autogit.json'])
         git.commit(['-m', message])
-        ret = git.push(['ssh://dongpl@review.source.spreadtrum.com:29418/lava_apr/lava_submit_server', 'HEAD:refs/for/master'])
-    except git.GitCommandError:
+        ret = git.push(['ssh://dongpl@review.source.spreadtrum.com:29418/scm/etc/build', 'HEAD:refs/for/master'])
+    except GitCommandError:
         send_mail('Auto Git Main GitCommandError', traceback.format_exc(), TO_SOMEONE)
         print FAIL
         return
@@ -126,4 +127,4 @@ def gerrit_verify_review_submit(commitid):
 
 
 if __name__ == '__main__':
-    main()
+    main('test')
