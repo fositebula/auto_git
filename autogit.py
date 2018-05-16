@@ -1,9 +1,7 @@
 # coding=utf-8
-import os
 import time
 
 import sh
-from requests import ConnectionError
 
 from git import Repo
 from git.exc import GitCommandError
@@ -42,9 +40,10 @@ LOG_LEVEL = logging.INFO
 FAIL = 'Fail'
 SUCCESS = 'Success'
 NO_CHANGE = 'No Change'
+GERRIT_ERROR = 'Gerrit Error'
 
 #git repository path
-GIT_REPOSITORY_path = ''
+GIT_REPOSITORY_path = '/home/local/SPREADTRUM/pl.dong/build/'
 
 def logger_init():
     logger.setLevel(level = LOG_LEVEL)
@@ -73,60 +72,56 @@ def send_mail(sub, content, send_mail_list):
         logger.error(traceback.format_exc())
 
 def sh_git(message):
-    print os.getcwd()
-    sh.git(['add', 'autogit.json'])
+    import subprocess
+    import re
+    sh.cd(GIT_REPOSITORY_path)
+    sh.git(['add', 'joint_complie.json'])
     sh.git(['commit', '-m', message])
-    my_git = sh.Command('./git.sh')
-    my_git(['-i', '~/.ssh/gerritkey/id_rsa', 'push', 'ssh://dongpl@review.source.spreadtrum.com:29418/scm/etc/build', 'HEAD:refs/for/master'])
-    # sh.git(['push', 'ssh://dongpl@review.source.spreadtrum.com:29418/scm/etc/build', 'HEAD:refs/for/master'])
+    ret = subprocess.Popen(['git', 'push', 'ssh://dongpl@review.source.spreadtrum.com:29418/scm/etc/build', 'HEAD:refs/for/master']
+                    , stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+    ret.wait()
+    stdr = ret.stderr.read()
+    gerrit_id = re.findall('http.*gerrit\/(\d+)', stdr, re.S)
+    return gerrit_id[0]
 
 def main(message):
     repo = Repo(GIT_REPOSITORY_path)
     if not repo.is_dirty():
         print NO_CHANGE
         return
-    git = repo.git
     try:
-        # git.add(['autogit.json'])
-        # git.commit(['-m', message])
-        # ret = git.push(['ssh://dongpl@review.source.spreadtrum.com:29418/scm/etc/build', 'HEAD:refs/for/master'])
-        sh_git('test')
+        gerritid = sh_git('message')
     except GitCommandError:
         traceback.print_exc()
         send_mail('Auto Git Main GitCommandError', traceback.format_exc(), TO_SOMEONE)
         print FAIL
         return
     commit_id = repo.heads[0].commit.hexsha
-    ret = gerrit_verify_review_submit(commit_id)
+    ret = gerrit_verify_review_submit(commit_id, gerritid)
     print ret
 
-def gerrit_verify_review_submit(commitid):
-    def _get_gerrit_id(s, commitid):
-        qurl = 'http://review.source.spreadtrum.com/gerrit/changes/?q={}&n=25&O=81'.format(commitid)
-        response_data = s.get(qurl)
-        j_str =  response_data.content[4:]
-        j_data = json.loads(j_str)
-        gerrit_id = j_data[0]['_number']
-        return gerrit_id
+def gerrit_verify_review_submit(commitid, gerrit_id):
     try:
         s = requests.Session()
-        res = s.get("http://review.source.spreadtrum.com/gerrit/login/", auth=(USER, PASSWD))
-        #获取gerritid
-        gerritid = _get_gerrit_id(s, commitid)
-        print 'Gerrit ID :', gerritid
+        res = s.get("http://review.source.spreadtrum.com/gerrit/login/", auth=('dongpl', 'dongpl123'))
+        print 'Gerrit ID :', gerrit_id
+        print 'Commit ID :', commitid
         #获取X-Gerrit-Auth
-        res = s.get("http://review.source.spreadtrum.com/gerrit/changes/?q=change:{}+has:draft&O=0".format(gerritid))
+        res = s.get("http://review.source.spreadtrum.com/gerrit/changes/?q=change:{}+has:draft&O=0".format(gerrit_id))
         headers = res.request.headers
         X_Gerrit_Auth = headers['Cookie'].split('=')[-1]
         headers['X-Gerrit-Auth'] = X_Gerrit_Auth
 
         #执行打分并合入
-        verify_review_url = 'http://review.source.spreadtrum.com/gerrit/changes/{}/revisions/{}/review'.format(gerritid, commitid)
-        submit_url = 'http://review.source.spreadtrum.com/gerrit/changes/{}/revisions/{}/submit'.format(gerritid, commitid)
+        verify_review_url = 'http://review.source.spreadtrum.com/gerrit/changes/{}/revisions/{}/review'.format(gerrit_id, commitid)
+        submit_url = 'http://review.source.spreadtrum.com/gerrit/changes/{}/revisions/{}/submit'.format(gerrit_id, commitid)
         post_data = {"labels":{"Code-Review":2,"Verified":1},"strict_labels":True,"drafts":"PUBLISH_ALL_REVISIONS"}
         res = s.post(verify_review_url, headers=headers, json=post_data)
         print res.status_code
         res = s.post(submit_url, headers=headers, json=post_data)
+        if res.status_code == 409:
+            send_mail('Auto Git exception', 'Gerrit Error: gerrit id: {}'.format(gerrit_id), TO_SOMEONE)
+            return GERRIT_ERROR
         print res.status_code
         if res.status_code == 200:
             return SUCCESS
