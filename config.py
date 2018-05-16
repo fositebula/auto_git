@@ -1,0 +1,1 @@
+GIT_REPOSITORY_PATH = '/home/local/SPREADTRUM/pl.dong/build'
