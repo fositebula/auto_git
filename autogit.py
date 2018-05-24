@@ -153,9 +153,12 @@ def gerrit_verify_review_submit(commitid, gerrit_id):
 if __name__ == '__main__':
     try:
         source_path = sys.argv[1]
+        submitter = sys.argv[2]
+        if '@' in submitter:
+            submitter = submitter.split('@')[0]
         sh.cp(source_path, GIT_REPOSITORY_PATH)
     except ErrorReturnCode:
         send_mail('Auto Git exception', traceback.format_exc(), TO_SOMEONE)
         exit(COPY_ERROR)
 
-    main('test')
+    main(submitter)
